@@ -22,8 +22,13 @@ from .chunking import Chunk
 def _load_st_model(model_name: str):
     from sentence_transformers import SentenceTransformer
 
+    # Сначала пробуем из локального кэша без сети (local_files_only): на нестабильной сети
+    # это избавляет от лишних API-запросов и ретраев. Если модели нет — качаем онлайн.
     # device="cpu" — явно, чтобы не пытаться на GPU при CUDA-сборке torch.
-    return SentenceTransformer(model_name, device="cpu")
+    try:
+        return SentenceTransformer(model_name, device="cpu", local_files_only=True)
+    except Exception:
+        return SentenceTransformer(model_name, device="cpu")
 
 
 class Embedder:

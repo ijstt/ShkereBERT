@@ -4,7 +4,10 @@ transformers>=4.40
 datasets>=2.18
 
 # Retrieval
-sentence-transformers>=2.7
+# <5: в 5.x загрузчик через AutoProcessor ломает офлайн-загрузку многоязычной модели
+# (RU-эмбеддера). 4.x грузит через AutoTokenizer и работает офлайн.
+sentence-transformers>=2.7,<5
+sentencepiece>=0.2          # токенизатор многоязычных моделей (RU-эмбеддер)
 faiss-cpu>=1.8
 rank-bm25>=0.2.2          # stretch: hybrid retrieval
 
