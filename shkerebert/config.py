@@ -34,7 +34,9 @@ class ChunkConfig:
 class RetrieverConfig:
     """Параметры плотного поиска (и опционального reranker'а)."""
 
-    embed_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    # Эмбеддер можно переключить через env SHKEREBERT_EMBED (напр. на многоязычный для RU).
+    embed_model: str = os.environ.get(
+        "SHKEREBERT_EMBED", "sentence-transformers/all-MiniLM-L6-v2")
     top_k: int = 5           # сколько чанков отдаём reader'у
     normalize: bool = True   # L2-нормировка => inner product = cosine
     # Пол похожести top-1: ниже => сразу абстенция (retrieval-level no-answer).
