@@ -102,6 +102,20 @@ def default_config() -> Config:
     return Config()
 
 
+def multilingual_config() -> Config:
+    """Пресет EN+RU (напр. банковские документы). Меняет эмбеддер на многоязычный.
+
+    Требует загруженной модели paraphrase-multilingual-MiniLM-L12-v2 (эмбеддинги EN+RU).
+    Генеративный ридер (Qwen) сам по себе уже двуязычный.
+    """
+    return Config(
+        retriever=RetrieverConfig(
+            embed_model="sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2",
+            top_k=Config().retriever.top_k,
+        )
+    )
+
+
 # Утилита для ablation'ов: неглубокое переопределение полей.
 def with_overrides(cfg: Config, **kwargs) -> Config:
     """Вернуть копию cfg с изменёнными вложенными полями.

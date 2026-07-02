@@ -52,32 +52,13 @@ class Reader:
         self.cfg = cfg
         self.tokenizer, self.model = _load_qa(cfg.model)
 
-    def _best_span_for_chunk(self, question: str, chunk: Chunk) -> SpanAnswer:
-        import torch
-
+    def _extract(self, start_logits, end_logits, offsets, seq_ids, chunk: Chunk) -> SpanAnswer:
+        """Достать лучший span и null-score из логитов ОДНОГО примера (numpy)."""
         cfg = self.cfg
-        enc = self.tokenizer(
-            question,
-            chunk.text,
-            truncation="only_second",
-            max_length=cfg.max_seq_len,
-            stride=cfg.doc_stride,
-            return_offsets_mapping=True,
-            return_tensors="pt",
-        )
-        offsets = enc.pop("offset_mapping")[0].numpy()
-        seq_ids = enc.sequence_ids(0)
-
-        with torch.no_grad():
-            out = self.model(**enc)
-        start_logits = out.start_logits[0].numpy()
-        end_logits = out.end_logits[0].numpy()
-
         null_score = float(start_logits[0] + end_logits[0])
 
-        # Маска валидных токенов контекста (sequence_id == 1).
-        ctx_mask = np.array([sid == 1 for sid in seq_ids])
-        ctx_positions = np.where(ctx_mask)[0]
+        # Валидные токены контекста (sequence_id == 1); паддинг/вопрос исключены.
+        ctx_positions = np.where(np.array([sid == 1 for sid in seq_ids]))[0]
         if ctx_positions.size == 0:
             return SpanAnswer("", -1e9, null_score, 0, 0, chunk)
 
@@ -89,9 +70,7 @@ class Reader:
         best = None
         for s in starts:
             for e in ends:
-                if e < s:
-                    continue
-                if (e - s + 1) > cfg.max_answer_len:
+                if e < s or (e - s + 1) > cfg.max_answer_len:
                     continue
                 score = float(start_logits[s] + end_logits[e])
                 if best is None or score > best[0]:
@@ -101,13 +80,33 @@ class Reader:
             return SpanAnswer("", -1e9, null_score, 0, 0, chunk)
 
         score, s, e = best
-        start_char = int(offsets[s][0])
-        end_char = int(offsets[e][1])
+        start_char, end_char = int(offsets[s][0]), int(offsets[e][1])
         text = chunk.text[start_char:end_char].strip()
         return SpanAnswer(text, score, null_score, start_char, end_char, chunk)
 
+    def _read_one(self, question: str, chunk: Chunk) -> SpanAnswer:
+        import torch
+
+        cfg = self.cfg
+        enc = self.tokenizer(
+            question, chunk.text,
+            truncation="only_second", max_length=cfg.max_seq_len,
+            return_offsets_mapping=True, return_tensors="pt",
+        )
+        offsets = enc.pop("offset_mapping")[0].numpy()
+        seq_ids = enc.sequence_ids(0)
+        with torch.no_grad():
+            out = self.model(**enc)
+        return self._extract(out.start_logits[0].numpy(), out.end_logits[0].numpy(),
+                             offsets, seq_ids, chunk)
+
     def read(self, question: str, chunks: list[Chunk]) -> list[SpanAnswer]:
-        """Прочитать ответ из каждого фрагмента, отсортировать по best_span_score."""
-        answers = [self._best_span_for_chunk(question, ch) for ch in chunks]
+        """Прочитать ответ из каждого фрагмента, отсортировать по best_span_score.
+
+        Обрабатываем фрагменты по одному (без паддинга): на CPU это быстрее батча —
+        паддинг до самого длинного фрагмента добавил бы «пустой» compute (замерено).
+        Общая логика извлечения span вынесена в `_extract` (переиспользуется).
+        """
+        answers = [self._read_one(question, ch) for ch in chunks]
         answers.sort(key=lambda a: a.score, reverse=True)
         return answers
