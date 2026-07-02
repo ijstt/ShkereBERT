@@ -55,9 +55,29 @@ class ReaderConfig:
     max_answer_len: int = 64
     top_k_answers: int = 1
     # Порог абстенции reader-level: абстейним, если (null_score - best_span) > tau.
-    # Значение откалибровано на dev-сплите SQuAD v2 (eval_e2e): tau* ≈ -6.5 максимизирует
-    # общий F1 (EM=76.0, F1=78.3, NoAns_F1=87.7). См. eval/results/e2e_threshold_curve.png.
-    no_answer_threshold: float = -6.5
+    # Откалибровано на CALIBRATION-сплите SQuAD v2 (eval_e2e, без утечки в test): tau* ≈ -6.3.
+    # На held-out test: EM=73.6, F1=75.8, NoAns_F1=84.6 (oracle-контекст: F1=81.0).
+    no_answer_threshold: float = -6.3
+
+
+@dataclass(frozen=True)
+class GeneratorConfig:
+    """Генеративный ридер (Qwen 2.5 Instruct, GGUF, локально через llama-cpp).
+
+    Полностью офлайн: ни один документ/вопрос не покидает машину — ключевой аргумент
+    для банковского on-premise-сценария. Путь к модели переопределяется env SHKEREBERT_LLM.
+    """
+
+    model_path: str = os.environ.get(
+        "SHKEREBERT_LLM",
+        "/home/ijstt/home-ai-agent/models/qwen2.5-3b-instruct-q4_k_m.gguf",
+    )
+    n_ctx: int = 4096
+    n_threads: int = 8
+    max_tokens: int = 256
+    temperature: float = 0.0     # детерминированность для воспроизводимости/оценки
+    # Маркер отказа, который модель обязана вернуть, если ответа в контексте нет.
+    no_answer_marker: str = "НЕТ ОТВЕТА"
 
 
 @dataclass(frozen=True)
@@ -65,6 +85,9 @@ class Config:
     chunk: ChunkConfig = field(default_factory=ChunkConfig)
     retriever: RetrieverConfig = field(default_factory=RetrieverConfig)
     reader: ReaderConfig = field(default_factory=ReaderConfig)
+    generator: GeneratorConfig = field(default_factory=GeneratorConfig)
+    # Режим ридера: "extractive" (BERT) | "generative" (Qwen) | "hybrid" (Qwen + BERT-проверка).
+    reader_mode: str = "extractive"
     data_dir: Path = DATA_DIR
     seed: int = 42
 

@@ -101,52 +101,115 @@ def calibrate(cfg: Config, raw, taus=None):
     return curve_df, best
 
 
+def collect_oracle_predictions(cfg: Config, questions, reader: Reader):
+    """Oracle-baseline: reader читает ЗОЛОТОЙ контекст вопроса (без retrieval).
+
+    Показывает потолок reader'а — если end-to-end F1 близок к нему, значит retrieval
+    почти не теряет качества (иначе виден размер потери на этапе поиска).
+    """
+    from shkerebert.chunking import Chunk
+
+    raw, t0 = [], time.time()
+    for q in questions:
+        gold = Chunk(id=f"{q['context_id']}::gold", doc_id=q["context_id"],
+                     text=q["context"], index=0, n_tokens=0, title="")
+        spans = reader.read(q["question"], [gold])
+        best = spans[0]
+        raw.append({
+            "id": q["id"], "text": best.text, "gap": best.gap,
+            "top1_score": 1e9,  # золотой контекст всегда «найден»
+            "answers": q["answers"], "is_impossible": q["is_impossible"],
+        })
+    dt = time.time() - t0
+    return raw, 1000 * dt / max(1, len(questions))
+
+
+def score_fixed_tau(cfg: Config, raw, tau: float):
+    """Метрики на выборке при ФИКСИРОВАННОМ tau (для отчёта на held-out test)."""
+    import evaluate
+
+    metric = evaluate.load("squad_v2")
+    refs = _references(raw)
+    return score_at_tau(metric, raw, refs, tau, cfg.retriever.min_score)
+
+
+def _summary_row(setup, tau, res, lat, n):
+    return {
+        "setup": setup, "tau*": round(float(tau), 3),
+        "EM": round(res["exact"], 2), "F1": round(res["f1"], 2),
+        "HasAns_F1": round(res.get("HasAns_f1", float("nan")), 2),
+        "NoAns_F1": round(res.get("NoAns_f1", float("nan")), 2),
+        "latency_ms/q": round(lat, 1), "n_test": n,
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--n", type=int, default=1000)
+    ap.add_argument("--n", type=int, default=1500, help="всего вопросов (делятся 50/50)")
+    ap.add_argument("--calib-frac", type=float, default=0.5)
     args = ap.parse_args()
 
     cfg = default_config()
     docs, questions = build_eval_set(n_questions=args.n, seed=cfg.seed)
-    print(f"Корпус: {len(docs)} документов, {len(questions)} вопросов. Строю пайплайн...")
+    n_cal = int(len(questions) * args.calib_frac)
+    calib_q, test_q = questions[:n_cal], questions[n_cal:]
+    print(f"Корпус: {len(docs)} док.; calibration={len(calib_q)}, test={len(test_q)}. "
+          f"Строю пайплайн...")
     retriever = DenseRetriever.build(docs, cfg)
     reader = Reader(cfg.reader)
 
-    raw, lat = collect_raw_predictions(cfg, questions, retriever, reader)
-    print(f"Инференс: {lat:.1f} ms/вопрос. Калибрую порог tau...")
-    curve_df, best = calibrate(cfg, raw)
+    # --- Retrieval-пайплайн: калибруем tau на calibration, отчитываемся на TEST ---
+    raw_cal_r, _ = collect_raw_predictions(cfg, calib_q, retriever, reader)
+    raw_test_r, lat_r = collect_raw_predictions(cfg, test_q, retriever, reader)
+    curve_r, best_r = calibrate(cfg, raw_cal_r)
+    tau_r = float(best_r["tau"])
+    test_r = score_fixed_tau(cfg, raw_test_r, tau_r)
+    print(f"[retrieval] tau*={tau_r:.2f} (на calibration) -> оценка на test")
+
+    # --- Oracle-baseline (reader на золотом контексте) ---
+    raw_cal_o, _ = collect_oracle_predictions(cfg, calib_q, reader)
+    raw_test_o, lat_o = collect_oracle_predictions(cfg, test_q, reader)
+    _, best_o = calibrate(cfg, raw_cal_o)
+    tau_o = float(best_o["tau"])
+    test_o = score_fixed_tau(cfg, raw_test_o, tau_o)
+    print(f"[oracle]    tau*={tau_o:.2f} (на calibration) -> оценка на test")
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    curve_df.to_csv(RESULTS_DIR / "e2e_threshold_curve.csv", index=False)
+    curve_r.to_csv(RESULTS_DIR / "e2e_threshold_curve.csv", index=False)
 
-    # График F1 vs tau
+    # График F1 vs tau (калибровка retrieval-пайплайна, отметка выбранного tau*)
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     plt.figure(figsize=(7, 4.5))
-    plt.plot(curve_df["tau"], curve_df["f1"], label="overall F1", lw=2)
-    plt.plot(curve_df["tau"], curve_df["HasAns_f1"], "--", label="HasAns F1")
-    plt.plot(curve_df["tau"], curve_df["NoAns_f1"], "--", label="NoAns F1")
-    plt.axvline(best["tau"], color="red", ls=":", label=f"tau*={best['tau']:.2f}")
+    plt.plot(curve_r["tau"], curve_r["f1"], label="overall F1", lw=2)
+    plt.plot(curve_r["tau"], curve_r["HasAns_f1"], "--", label="HasAns F1")
+    plt.plot(curve_r["tau"], curve_r["NoAns_f1"], "--", label="NoAns F1")
+    plt.axvline(tau_r, color="red", ls=":", label=f"tau*={tau_r:.2f} (calib)")
     plt.xlabel("порог абстенции tau (null - span)")
     plt.ylabel("F1")
-    plt.title("Калибровка порога «нет ответа» (SQuAD v2)")
+    plt.title("Калибровка порога на calibration-сплите (SQuAD v2)")
     plt.legend()
     plt.tight_layout()
     plt.savefig(RESULTS_DIR / "e2e_threshold_curve.png", dpi=130)
 
-    summary = pd.DataFrame([{
-        "tau*": best["tau"], "EM": best["exact"], "F1": best["f1"],
-        "HasAns_F1": best["HasAns_f1"], "NoAns_F1": best["NoAns_f1"],
-        "latency_ms/q": lat, "n": len(questions),
-        "embed_model": cfg.retriever.embed_model, "reader": cfg.reader.model,
-        "chunk_size": cfg.chunk.size, "top_k": cfg.retriever.top_k,
-    }])
+    summary = pd.DataFrame([
+        _summary_row("retrieval (test)", tau_r, test_r, lat_r, len(test_q)),
+        _summary_row("oracle-context (test)", tau_o, test_o, lat_o, len(test_q)),
+    ])
+    summary["embed_model"] = cfg.retriever.embed_model
+    summary["reader"] = cfg.reader.model
+    summary["chunk_size"] = cfg.chunk.size
+    summary["top_k"] = cfg.retriever.top_k
     summary.to_csv(RESULTS_DIR / "e2e_summary.csv", index=False)
-    print("\n=== Лучшая рабочая точка ===")
-    print(summary.to_string(index=False))
-    print(f"\nГрафик: {RESULTS_DIR/'e2e_threshold_curve.png'}")
+
+    gap = test_o["f1"] - test_r["f1"]
+    print("\n=== Оценка на HELD-OUT TEST (tau подобран на calibration) ===")
+    print(summary[["setup", "tau*", "EM", "F1", "HasAns_F1", "NoAns_F1", "latency_ms/q", "n_test"]]
+          .to_string(index=False))
+    print(f"\nПотеря на этапе retrieval (oracle F1 - retrieval F1): {gap:.2f} пункта F1")
+    print(f"График: {RESULTS_DIR/'e2e_threshold_curve.png'}")
 
 
 if __name__ == "__main__":

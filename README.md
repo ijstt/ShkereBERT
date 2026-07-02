@@ -13,10 +13,17 @@
    → эмбеддинги (all-MiniLM-L6-v2, CPU, кэш)
    → индекс FAISS (cosine)
    → retrieval top-k
-   → экстрактивный reader (tinyroberta-squad2): span + null-score
-   → абстенция (retrieval-level + reader-level, порог τ)
-   → ответ + confidence + ЦИТАТА фрагмента
+   → ридер (на выбор):
+        • extractive — BERT tinyroberta-squad2 (span + null-score, порог τ)
+        • generative — Qwen 2.5 3B локально (llama-cpp), grounded-ответ с цитатами
+        • hybrid     — Qwen отвечает, BERT проверяет обоснованность (анти-галлюцинация)
+   → абстенция (retrieval-level + reader-level)
+   → ответ + ЦИТАТА фрагмента(ов)
 ```
+
+**Режимы ридера** переключаются через `cfg.reader_mode` или аргумент `mode=` в
+`RAGPipeline.answer(...)`. Генеративный ридер полностью офлайн (Qwen GGUF на CPU) — ни
+один документ не покидает машину, что важно для on-premise-сценариев (напр. банк).
 
 **Обработка «нет ответа»** двухуровневая: (1) если лучший фрагмент слишком непохож на
 вопрос; (2) если reader считает `null_score - best_span_score > τ`. Порог τ калибруется на
@@ -65,15 +72,17 @@ CLI-чат:
 
 Recall@5 = 94% при 5 фрагментах — обоснование выбора `top_k=5`.
 
-**End-to-end QA** (baseline: chunk=256, k=5, reader=tinyroberta-squad2, n=800):
+**End-to-end QA** (chunk=256, k=5, reader=tinyroberta-squad2). Порог τ подобран на
+**calibration**-сплите, метрики — на **held-out test** (без утечки):
 
-| tau* | EM | F1 | HasAns F1 | NoAns F1 | latency |
-|---|---|---|---|---|---|
-| −6.5 | **76.0** | **78.3** | 67.8 | **87.7** | 264 мс/вопрос |
+| setup | tau* | EM | F1 | HasAns F1 | NoAns F1 | latency |
+|---|---|---|---|---|---|---|
+| **retrieval (наш пайплайн)** | −6.3 | 73.6 | **75.8** | 66.2 | 84.6 | 229 мс/q |
+| oracle-контекст (потолок reader'а) | −4.4 | 79.1 | **81.0** | 76.9 | 84.9 | 47 мс/q |
 
-F1=78.3 при найденном (а не золотом) контексте близок к «оракульному» уровню reader'а —
-значит retrieval почти не теряет качества. NoAns F1=87.7 подтверждает работу абстенции.
-Калибровка порога: `eval/results/e2e_threshold_curve.png`.
+**Потеря на этапе retrieval = 5.26 F1** (измерено). Oracle F1=81.0 совпадает с эталонным
+dev-F1 tinyroberta-squad2 → реализация reader'а корректна. Калибровка порога (на calibration):
+`eval/results/e2e_threshold_curve.png`.
 
 **Ablation** (`eval/results/ablations.csv`, `ablation_*.png`, n=400):
 
