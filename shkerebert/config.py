@@ -70,9 +70,10 @@ class GeneratorConfig:
     для банковского on-premise-сценария. Путь к модели переопределяется env SHKEREBERT_LLM.
     """
 
+    # По умолчанию ищем модель в ./models проекта; переопределяется env SHKEREBERT_LLM.
     model_path: str = os.environ.get(
         "SHKEREBERT_LLM",
-        "/home/ijstt/home-ai-agent/models/qwen2.5-3b-instruct-q4_k_m.gguf",
+        str(ROOT / "models" / "qwen2.5-3b-instruct-q4_k_m.gguf"),
     )
     n_ctx: int = 4096
     n_threads: int = 8
