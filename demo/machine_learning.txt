@@ -1,0 +1,28 @@
+Machine Learning: A Short Primer
+
+Machine learning is a branch of artificial intelligence that studies algorithms
+which improve automatically through experience and by the use of data. The term
+was coined by Arthur Samuel in 1959, while he was working at IBM on a program
+that learned to play checkers.
+
+Supervised learning is the most common paradigm. A model is trained on a labeled
+dataset, where each example is paired with a target output. The goal is to learn a
+mapping from inputs to outputs that generalizes to unseen data. Typical tasks
+include classification and regression.
+
+Unsupervised learning, by contrast, works with unlabeled data. The algorithm tries
+to discover hidden structure, for example by grouping similar examples together.
+Clustering and dimensionality reduction are classic unsupervised techniques.
+
+Reinforcement learning is a third paradigm in which an agent interacts with an
+environment and learns to maximize a cumulative reward signal. It underpins many
+recent advances in game playing and robotics.
+
+The transformer architecture was introduced in 2017 in the paper "Attention Is All
+You Need". Transformers rely on a mechanism called self-attention, which allows the
+model to weigh the importance of different parts of the input sequence. This design
+became the foundation for large language models such as BERT and GPT.
+
+Overfitting occurs when a model captures noise in the training data instead of the
+underlying signal, and therefore performs poorly on new data. Common remedies
+include regularization, early stopping, and gathering more training data.

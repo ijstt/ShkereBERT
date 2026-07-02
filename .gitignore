@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Данные / кэш (пересобираются скриптами)
+data/
+!data/.gitkeep
+
+# Артефакты оценки (CSV/PNG) НЕ игнорируем — это доказательная база для отчёта.
+
+# HuggingFace кэш при локальном переопределении
+.hf_cache/
+
+# Прочее
+.DS_Store
+*.log

@@ -1,0 +1,2 @@
+embed_model,chunk_size,recall@1,recall@3,recall@5,recall@10,mrr,n_answerable,latency_ms/q
+sentence-transformers/all-MiniLM-L6-v2,256,0.7877984084880637,0.9204244031830239,0.9416445623342176,0.9708222811671088,0.8586596353837734,377,1.630901974139226

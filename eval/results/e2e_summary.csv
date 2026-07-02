@@ -1,0 +1,2 @@
+tau*,EM,F1,HasAns_F1,NoAns_F1,latency_ms/q,n,embed_model,reader,chunk_size,top_k
+-6.470919442017875,76.0,78.30228166341169,67.75019981625825,87.70685579196217,264.4210883975029,800,sentence-transformers/all-MiniLM-L6-v2,deepset/tinyroberta-squad2,256,5
