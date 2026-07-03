@@ -76,6 +76,7 @@ def load_squad_questions(split: str = "validation", max_questions: int | None = 
                 "question": row["question"],
                 "context": row["context"],
                 "context_id": _hash_id(row["context"], "sq"),
+                "title": row.get("title", ""),
                 "answers": answers,
                 "is_impossible": len(answers) == 0,
             }
