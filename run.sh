@@ -8,6 +8,7 @@
 #   ./run.sh ask  "ВОПРОС" [ФАЙЛ] [РЕЖИМ]
 #   ./run.sh test                — прогнать тесты
 #   ./run.sh eval                — оценка (retrieval + e2e)
+#   ./run.sh eval-extra          — долгие исследования (longdoc/multiseed/варианты/генерация)
 #   ./run.sh check               — проверить окружение (venv, модели)
 
 set -euo pipefail
@@ -54,6 +55,12 @@ case "$cmd" in
     $PY -m eval.eval_retrieval --n 800
     $PY -m eval.eval_e2e --n 1500
     ;;
+  eval-extra)   # долгие исследования: длинные документы, multi-seed CI, варианты поиска, генерация
+    $PY -u -m eval.eval_longdoc --n 600
+    $PY -u -m eval.eval_multiseed --n 800
+    $PY -u -m eval.eval_retrieval_variants --n 800
+    $PY -u -m eval.eval_generative --n 150
+    ;;
   check)
     echo "venv:      $($PY --version)"
     echo "PYTHONPATH: $PYTHONPATH"
@@ -71,6 +78,6 @@ for name in ["sentence-transformers/all-MiniLM-L6-v2",
 PY
     ;;
   help|*)
-    sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
     ;;
 esac
