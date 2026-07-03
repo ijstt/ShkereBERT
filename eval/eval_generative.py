@@ -113,6 +113,11 @@ def summarize(details, mode: str) -> dict:
             sum(d["abstained"] for d in noans_q) / max(1, len(noans_q)), 4),
         "false_abstain_hasans": round(
             sum(d["abstained"] for d in ans_q) / max(1, len(ans_q)), 4),
+        # hybrid-guardrail: какую долю ответов на impossible-вопросы верификатор
+        # пометил UNVERIFIED (перехваченные галлюцинации); для остальных режимов 0
+        "unverified_flag_noans": round(
+            sum("UNVERIFIED" in d["reason"] for d in noans_q if not d["abstained"])
+            / max(1, sum(not d["abstained"] for d in noans_q)), 4),
         "latency_mean_s": round(float(lat.mean()), 2),
         "latency_p50_s": round(float(np.percentile(lat, 50)), 2),
         "latency_p95_s": round(float(np.percentile(lat, 95)), 2),

@@ -36,16 +36,37 @@ def _load_llm(model_path: str, n_ctx: int, n_threads: int):
     return Llama(model_path=model_path, n_ctx=n_ctx, n_threads=n_threads, verbose=False)
 
 
-_SYSTEM = (
+# System-prompt подбирается под язык вопроса: русский prompt на EN-вопросах провоцировал
+# Qwen отвечать по-русски (найдено оценкой eval_generative). Правило «только по фрагментам»
+# усилено явным запретом внешних знаний: на unanswerable-вопросах модель охотно отвечала
+# из собственной памяти (правдоподобно, но это галлюцинация по отношению к документу).
+_SYSTEM_RU = (
     "Ты — ассистент, который отвечает на вопрос СТРОГО по предоставленным фрагментам "
     "документа. Правила:\n"
-    "1. Используй только информацию из фрагментов ниже. Ничего не выдумывай.\n"
+    "1. Используй только информацию из фрагментов ниже. Никаких внешних знаний, ничего "
+    "не выдумывай, даже если знаешь ответ из других источников.\n"
     "2. Сначала напиши сам ответ по существу, а В КОНЦЕ укажи номера использованных "
     "фрагментов в квадратных скобках. Пример: «Столица — Париж [3].»\n"
     "3. НИКОГДА не отвечай одними скобками без текста ответа.\n"
     "4. Если ответа в фрагментах НЕТ — ответь ровно: {marker}\n"
     "5. Отвечай кратко и на языке вопроса."
 )
+
+_SYSTEM_EN = (
+    "You are an assistant that answers the question STRICTLY from the provided document "
+    "fragments. Rules:\n"
+    "1. Use only information from the fragments below. No outside knowledge; do not "
+    "invent facts even if you know the answer from elsewhere.\n"
+    "2. Write the answer itself first, and at the END cite the used fragment numbers "
+    "in square brackets. Example: \"The capital is Paris [3].\"\n"
+    "3. NEVER reply with brackets alone, without answer text.\n"
+    "4. If the fragments do NOT contain the answer, reply exactly: {marker}\n"
+    "5. Answer briefly, in the language of the question."
+)
+
+_CYRILLIC = re.compile(r"[а-яё]", re.IGNORECASE)
+# Маркер отказа для EN-промпта; при детекции абстенции принимаем оба варианта.
+_EN_MARKER = "NO ANSWER"
 
 
 class Generator:
@@ -62,8 +83,12 @@ class Generator:
         return f"Фрагменты:\n{context}\n\nВопрос: {question}"
 
     def generate(self, question: str, chunks: list[Chunk]) -> GenAnswer:
-        marker = self.cfg.no_answer_marker
-        system = _SYSTEM.format(marker=marker)
+        if _CYRILLIC.search(question):
+            marker = self.cfg.no_answer_marker
+            system = _SYSTEM_RU.format(marker=marker)
+        else:
+            marker = _EN_MARKER
+            system = _SYSTEM_EN.format(marker=marker)
         user = self._build_prompt(question, chunks)
 
         t0 = time.time()
@@ -76,9 +101,11 @@ class Generator:
         dt = time.time() - t0
         text = out["choices"][0]["message"]["content"].strip()
 
-        # Абстенция: маркер отказа встречается в ответе.
+        # Абстенция: маркер отказа встречается в ответе (принимаем RU и EN варианты —
+        # модель может ответить не тем маркером, который просили).
         norm = text.upper().replace("Ё", "Е")
-        if marker.upper().replace("Ё", "Е") in norm:
+        markers = {marker, self.cfg.no_answer_marker, _EN_MARKER}
+        if any(m.upper().replace("Ё", "Е") in norm for m in markers):
             return GenAnswer("", False, raw=text, latency_s=dt)
 
         # Извлекаем цитаты [n] и мапим на id фрагментов.
