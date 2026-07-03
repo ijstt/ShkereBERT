@@ -45,6 +45,11 @@ class RetrieverConfig:
     use_reranker: bool = False
     rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     rerank_pool: int = 20    # сколько кандидатов достаём до reranker'а
+    # Stretch: гибрид со словарным BM25 (Reciprocal Rank Fusion поверх двух ранжирований).
+    # RRF устойчивее смешивания скоров: косинус и BM25 живут в несравнимых шкалах.
+    use_bm25: bool = False
+    bm25_pool: int = 20      # кандидатов из каждого источника до слияния
+    rrf_k: int = 60          # константа RRF (стандартное значение из литературы)
 
 
 @dataclass(frozen=True)
