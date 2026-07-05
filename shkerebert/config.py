@@ -14,6 +14,9 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+# Каталог CSV/PNG отчётов eval-скриптов (eval/eval_*.py).
+RESULTS_DIR = Path(__file__).resolve().parent.parent / "eval" / "results"
+
 
 @dataclass(frozen=True)
 class ChunkConfig:
